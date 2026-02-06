@@ -1,0 +1,13 @@
+# Зависимости
+node_modules/
+
+# Файл с credentials - НИКОГДА не коммитьте его в git!
+.env
+
+# Логи
+*.log
+npm-debug.log*
+
+# OS файлы
+.DS_Store
+Thumbs.db

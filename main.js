@@ -1,92 +1,148 @@
 /**
  * Мини-список дел
- * Данные хранятся в localStorage. У задачи: title, completed, createdAt.
+ * Данные хранятся в PostgreSQL через Node.js + Express backend.
+ * У задачи: id, title, completed, createdAt.
+ * 
+ * ИНСТРУКЦИЯ ПО ПОДКЛЮЧЕНИЮ К BACKEND:
+ * 
+ * 1. Убедитесь, что backend сервер запущен (см. backend/server.js)
+ * 2. Измените API_BASE_URL ниже на адрес вашего backend сервера:
+ *    - Для локальной разработки: 'http://localhost:3000'
+ *    - Для продакшена: 'https://your-domain.com'
+ * 3. Убедитесь, что CORS настроен правильно в backend/server.js
+ * 4. Если frontend и backend на разных доменах/портах, настройте CORS в backend
  */
 
-// Ключ для localStorage
-const STORAGE_KEY = 'mini-todo-tasks';
+// Базовый URL для API запросов
+// ИЗМЕНИТЕ ЭТОТ АДРЕС на адрес вашего backend сервера!
+const API_BASE_URL = 'http://localhost:3000';
 
 // Элементы DOM
 const taskInput = document.getElementById('taskInput');
 const addBtn = document.getElementById('addBtn');
 const taskList = document.getElementById('taskList');
 
+// Флаг для отслеживания состояния загрузки
+let isLoading = false;
+let errorMessage = null;
+
 /**
- * Загружает задачи из localStorage.
- * @returns {Array} массив задач { id, title, completed, createdAt }
+ * Выполняет HTTP запрос к API с обработкой ошибок.
+ * @param {string} url - URL для запроса
+ * @param {Object} options - опции для fetch (method, body, headers и т.д.)
+ * @returns {Promise<Object>} результат запроса
  */
-function loadTasks() {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) return [];
+async function apiRequest(url, options = {}) {
   try {
-    return JSON.parse(raw);
-  } catch {
-    return [];
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Ошибка сервера' }));
+      throw new Error(errorData.error || `HTTP ${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Ошибка API запроса:', error);
+    throw error;
   }
 }
 
 /**
- * Сохраняет задачи в localStorage.
- * @param {Array} tasks - массив задач
+ * Загружает задачи с сервера.
+ * @returns {Promise<Array>} массив задач { id, title, completed, createdAt }
  */
-function saveTasks(tasks) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
-}
-
-/**
- * Генерирует уникальный id для задачи (по времени + случайное число).
- * @returns {string}
- */
-function generateId() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2);
+async function loadTasks() {
+  try {
+    isLoading = true;
+    errorMessage = null;
+    const tasks = await apiRequest(`${API_BASE_URL}/todos`);
+    return tasks;
+  } catch (error) {
+    errorMessage = `Ошибка загрузки: ${error.message}`;
+    console.error('Не удалось загрузить задачи:', error);
+    return [];
+  } finally {
+    isLoading = false;
+  }
 }
 
 /**
  * Переключает статус выполнения задачи.
- * @param {string} id - id задачи
+ * @param {string|number} id - id задачи
  */
-function toggleCompleted(id) {
-  const tasks = loadTasks();
-  const task = tasks.find((t) => t.id === id);
-  if (task) {
-    task.completed = !task.completed;
-    saveTasks(tasks);
-    renderTasks();
+async function toggleCompleted(id) {
+  try {
+    // Сначала загружаем текущее состояние задачи
+    const tasks = await loadTasks();
+    const task = tasks.find((t) => t.id == id); // Используем == для сравнения строки и числа
+    if (!task) {
+      console.error('Задача не найдена');
+      return;
+    }
+
+    // Отправляем обновление на сервер
+    await apiRequest(`${API_BASE_URL}/todos/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ completed: !task.completed }),
+    });
+
+    // Перерисовываем список
+    await renderTasks();
+  } catch (error) {
+    alert(`Ошибка при обновлении задачи: ${error.message}`);
+    console.error('Не удалось обновить задачу:', error);
   }
 }
 
 /**
  * Удаляет задачу по id.
- * @param {string} id - id задачи
+ * @param {string|number} id - id задачи
  */
-function deleteTask(id) {
-  const tasks = loadTasks().filter((t) => t.id !== id);
-  saveTasks(tasks);
-  renderTasks();
+async function deleteTask(id) {
+  try {
+    await apiRequest(`${API_BASE_URL}/todos/${id}`, {
+      method: 'DELETE',
+    });
+
+    // Перерисовываем список
+    await renderTasks();
+  } catch (error) {
+    alert(`Ошибка при удалении задачи: ${error.message}`);
+    console.error('Не удалось удалить задачу:', error);
+  }
 }
 
 /**
  * Добавляет новую задачу. Пустую задачу не добавляет.
  * После добавления возвращает фокус в поле ввода.
  */
-function addTask() {
+async function addTask() {
   const title = taskInput.value.trim();
   if (!title) return;
 
-  const tasks = loadTasks();
-  const newTask = {
-    id: generateId(),
-    title,
-    completed: false,
-    createdAt: new Date().toISOString(),
-  };
-  tasks.push(newTask);
-  saveTasks(tasks);
+  try {
+    // Отправляем задачу на сервер
+    await apiRequest(`${API_BASE_URL}/todos`, {
+      method: 'POST',
+      body: JSON.stringify({ title }),
+    });
 
-  taskInput.value = '';
-  taskInput.focus(); // курсор возвращается в поле ввода
+    taskInput.value = '';
+    taskInput.focus(); // курсор возвращается в поле ввода
 
-  renderTasks();
+    // Перерисовываем список
+    await renderTasks();
+  } catch (error) {
+    alert(`Ошибка при добавлении задачи: ${error.message}`);
+    console.error('Не удалось добавить задачу:', error);
+  }
 }
 
 /**
@@ -144,9 +200,27 @@ function createTaskElement(task) {
 /**
  * Отрисовывает весь список задач (очищает контейнер и заполняет заново).
  */
-function renderTasks() {
-  const tasks = loadTasks();
+async function renderTasks() {
   taskList.innerHTML = '';
+
+  if (isLoading) {
+    const loading = document.createElement('p');
+    loading.className = 'empty';
+    loading.textContent = 'Загрузка...';
+    taskList.appendChild(loading);
+    return;
+  }
+
+  if (errorMessage) {
+    const error = document.createElement('p');
+    error.className = 'empty error';
+    error.textContent = errorMessage;
+    error.style.color = 'red';
+    taskList.appendChild(error);
+    return;
+  }
+
+  const tasks = await loadTasks();
 
   if (tasks.length === 0) {
     const empty = document.createElement('p');
@@ -162,7 +236,7 @@ function renderTasks() {
 }
 
 // Добавление по кнопке
-addBtn.addEventListener('click', addTask);
+addBtn.addEventListener('click', () => addTask());
 
 // Добавление по Enter в поле ввода
 taskInput.addEventListener('keydown', (e) => {
