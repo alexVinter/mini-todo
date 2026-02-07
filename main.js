@@ -15,7 +15,7 @@
 
 // Базовый URL для API запросов
 // ИЗМЕНИТЕ ЭТОТ АДРЕС на адрес вашего backend сервера!
-const API_BASE_URL = 'http://localhost:3000';
+const API_BASE_URL = (typeof window !== 'undefined' && window.location && window.location.origin) ? window.location.origin : '';
 
 // Элементы DOM
 const taskInput = document.getElementById('taskInput');

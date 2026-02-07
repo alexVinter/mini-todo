@@ -52,6 +52,7 @@ const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
 require('dotenv').config();
+const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -87,6 +88,17 @@ pool.query('SELECT NOW()', (err, res) => {
  * GET /todos
  * Получить все задачи
  */
+
+// Главная страница — отдаём index.html
+app.get('/', (req, res) => {
+  const path = require('path');
+  const root = path.join(__dirname, '..');
+  res.sendFile(path.resolve(root, 'index.html'));
+});
+
+const projectRoot = path.join(__dirname, '..');
+app.use(express.static(projectRoot));
+
 app.get('/todos', async (req, res) => {
   try {
     const result = await pool.query(
